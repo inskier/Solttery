@@ -9,4 +9,5 @@ services:
       - key: PRIVATE_KEY_JSON
         sync: false
       - key: SOLANA_NETWORK
+        value: devnet # Default to devnet for testing
         sync: false
