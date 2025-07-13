@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: solana-lottery
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node index.js
+    envVars:
+      - key: PRIVATE_KEY_JSON
+        sync: false
+      - key: SOLANA_NETWORK
+        sync: false
