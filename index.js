@@ -1,4 +1,4 @@
-// Autonomous Solana Lottery System - Updated for Repeat Entries and 0.01 SOL Entry
+// Autonomous Solana Lottery System - Updated with Dark Theme UI, Deposit Status & Wallet Balance
 const solanaWeb3 = require('@solana/web3.js');
 const express = require('express');
 const { Server } = require('ws');
@@ -27,7 +27,9 @@ let lotteryState = {
   pool: 0,
   status: 'Active',
   winner: null,
-  transactionsSeen: new Set()
+  transactionsSeen: new Set(),
+  recentDeposits: [],
+  balance: 0
 };
 
 async function loadState() {
@@ -63,51 +65,47 @@ app.get('/', (req, res) => {
 <html>
 <head>
   <title>Solana Lottery</title>
+  <style>
+    body {
+      background-color: #121212;
+      color: #e0e0e0;
+      font-family: Arial, sans-serif;
+      padding: 20px;
+    }
+    button {
+      background-color: #1e88e5;
+      color: white;
+      padding: 10px 20px;
+      border: none;
+      cursor: pointer;
+      border-radius: 5px;
+      margin-top: 10px;
+    }
+    #lottery-status, #recent-deposits, #wallet-balance {
+      margin-top: 20px;
+      padding: 10px;
+      background-color: #1e1e1e;
+      border-radius: 5px;
+    }
+  </style>
   <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.js"></script>
 </head>
 <body>
   <h1>Solana Lottery</h1>
-  <div>Wallet: ${LOTTERY_ADDRESS}</div>
-  <div>Your Wallet: <span id="wallet-address">Not connected</span></div>
-  <button id="connect-wallet">Connect Phantom Wallet</button>
+  <div>Lottery Wallet Address: ${LOTTERY_ADDRESS}</div>
+  <div id="wallet-balance">Wallet Balance: Loading...</div>
   <div id="lottery-status">Loading...</div>
-  <button id="join-lottery" disabled>Join Lottery (0.01 SOL)</button>
+  <div id="recent-deposits">Recent Deposits:</div>
   <script>
     const ws = new WebSocket('${wsProtocol}://' + location.host);
-    const connection = new solanaWeb3.Connection('https://api.${NETWORK}.solana.com', 'confirmed');
-    const LOTTERY_WALLET = new solanaWeb3.PublicKey('${LOTTERY_ADDRESS}');
-    let provider = null;
-
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
       document.getElementById('lottery-status').innerText =
-        'Participants: ' + data.participants.length + ' | Pool: ' + data.pool + ' SOL';
-    };
-
-    document.getElementById('connect-wallet').onclick = async () => {
-      provider = window.solana;
-      if (provider?.isPhantom) {
-        await provider.connect();
-        document.getElementById('wallet-address').innerText = provider.publicKey.toString();
-        document.getElementById('join-lottery').disabled = false;
-      }
-    };
-
-    document.getElementById('join-lottery').onclick = async () => {
-      if (!provider) return;
-      const transaction = new solanaWeb3.Transaction().add(
-        solanaWeb3.SystemProgram.transfer({
-          fromPubkey: provider.publicKey,
-          toPubkey: LOTTERY_WALLET,
-          lamports: ${LOTTERY_ENTRY_AMOUNT}
-        })
-      );
-      transaction.feePayer = provider.publicKey;
-      const { blockhash } = await connection.getLatestBlockhash();
-      transaction.recentBlockhash = blockhash;
-      const signed = await provider.signTransaction(transaction);
-      const sig = await connection.sendRawTransaction(signed.serialize());
-      await connection.confirmTransaction(sig);
+        'Participants: ' + data.participants.length + ' | Pool: ' + data.pool + ' SOL | Status: ' + data.status;
+      const deposits = data.recentDeposits || [];
+      document.getElementById('recent-deposits').innerHTML = '<strong>Recent Deposits:</strong><ul>' +
+        deposits.map(d => `<li>${d}</li>`).join('') + '</ul>';
+      document.getElementById('wallet-balance').innerText = 'Wallet Balance: ' + data.balance + ' SOL';
     };
   </script>
 </body>
@@ -146,6 +144,9 @@ async function monitorTransactions() {
       if (recipient === LOTTERY_WALLET.publicKey.toBase58() && amount === LOTTERY_ENTRY_AMOUNT) {
         lotteryState.participants.push(sender);
         lotteryState.pool += 0.01;
+        lotteryState.recentDeposits.unshift(sender);
+        if (lotteryState.recentDeposits.length > 10) lotteryState.recentDeposits.pop();
+        await updateBalance();
         await saveState();
         broadcastState();
 
@@ -157,6 +158,15 @@ async function monitorTransactions() {
       broadcastState('Transaction error: ' + error.message);
     }
   }, 'confirmed');
+}
+
+async function updateBalance() {
+  try {
+    const balanceLamports = await connection.getBalance(LOTTERY_WALLET.publicKey);
+    lotteryState.balance = (balanceLamports / solanaWeb3.LAMPORTS_PER_SOL).toFixed(4);
+  } catch (error) {
+    console.error('Balance fetch failed:', error);
+  }
 }
 
 async function pickWinner() {
@@ -182,6 +192,7 @@ async function pickWinner() {
 
     lotteryState.winner = winnerAddress;
     lotteryState.status = 'Complete';
+    await updateBalance();
     await saveState();
     broadcastState();
     setTimeout(resetLottery, 10000);
@@ -198,7 +209,9 @@ async function resetLottery() {
     pool: 0,
     status: 'Active',
     winner: null,
-    transactionsSeen: new Set()
+    transactionsSeen: new Set(),
+    recentDeposits: [],
+    balance: lotteryState.balance || 0
   };
   await saveState();
   broadcastState();
@@ -206,6 +219,7 @@ async function resetLottery() {
 
 async function start() {
   await loadState();
+  await updateBalance();
   monitorTransactions();
   server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 }
