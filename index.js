@@ -103,8 +103,10 @@ app.get('/', (req, res) => {
       document.getElementById('lottery-status').innerText =
         'Participants: ' + data.participants.length + ' | Pool: ' + data.pool + ' SOL | Status: ' + data.status;
       const deposits = data.recentDeposits || [];
-      document.getElementById('recent-deposits').innerHTML = '<strong>Recent Deposits:</strong><ul>' +
-        deposits.map(d => `<li>${d}</li>`).join('') + '</ul>';
+      document.getElementById('recent-deposits').innerHTML =
+        '<strong>Recent Deposits:</strong><ul>' +
+        deposits.map(d => `<li>${d}</li>`).join('') +
+        '</ul>';
       document.getElementById('wallet-balance').innerText = 'Wallet Balance: ' + data.balance + ' SOL';
     };
   </script>
