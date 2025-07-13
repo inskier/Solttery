@@ -1,0 +1,20 @@
+{
+  "name": "solana-lottery",
+  "version": "1.0.0",
+  "description": "Autonomous Solana Lottery System",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@solana/web3.js": "^1.88.2",
+    "body-parser": "^1.20.2",
+    "crypto": "^1.0.1",
+    "express": "^4.19.2",
+    "ws": "^8.15.1",
+    "rate-limit": "^0.1.6"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
