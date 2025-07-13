@@ -72,15 +72,6 @@ app.get('/', (req, res) => {
       font-family: Arial, sans-serif;
       padding: 20px;
     }
-    button {
-      background-color: #1e88e5;
-      color: white;
-      padding: 10px 20px;
-      border: none;
-      cursor: pointer;
-      border-radius: 5px;
-      margin-top: 10px;
-    }
     #lottery-status, #recent-deposits, #wallet-balance {
       margin-top: 20px;
       padding: 10px;
@@ -105,7 +96,7 @@ app.get('/', (req, res) => {
       const deposits = data.recentDeposits || [];
       document.getElementById('recent-deposits').innerHTML =
         '<strong>Recent Deposits:</strong><ul>' +
-        deposits.map(d => `<li>${d}</li>`).join('') +
+        (deposits.map(d => `<li>${d}</li>`).join('')) +
         '</ul>';
       document.getElementById('wallet-balance').innerText = 'Wallet Balance: ' + data.balance + ' SOL';
     };
