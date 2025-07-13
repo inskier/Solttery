@@ -96,7 +96,7 @@ app.get('/', (req, res) => {
       const deposits = data.recentDeposits || [];
       document.getElementById('recent-deposits').innerHTML =
         '<strong>Recent Deposits:</strong><ul>' +
-        (deposits.map(d => `<li>${d}</li>`).join('')) +
+        (deposits.map(d => `<li>${d}</li>`).join('') +
         '</ul>';
       document.getElementById('wallet-balance').innerText = 'Wallet Balance: ' + data.balance + ' SOL';
     };
