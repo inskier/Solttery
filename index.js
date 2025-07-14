@@ -18,6 +18,8 @@ const STATE_FILE = 'lottery-state.json';
 const NETWORK = process.env.SOLANA_NETWORK || 'mainnet-beta';
 const MAX_TRANSACTIONS_SEEN = 1000;
 const MINIMUM_FEE_LAMPORTS = 5000;
+// ADD: tolerance for lamports
+const AMOUNT_TOLERANCE = 5000; // about 0.000005 SOL
 
 const logger = winston.createLogger({
     level: 'info',
@@ -169,6 +171,7 @@ async function resetLottery() {
 async function monitorTransactions() {
     connection.onLogs(LOTTERY_WALLET.publicKey, async (logInfo) => {
         try {
+            // Only check if still active and not full
             if (lotteryState.participants.length >= MAX_PARTICIPANTS || lotteryState.status !== 'Active') return;
 
             const signature = logInfo.signature;
@@ -180,16 +183,34 @@ async function monitorTransactions() {
                 lotteryState.transactionsSeen.delete(oldest);
             }
 
+            // FIX: check ALL accounts for transfer TO our wallet, not just index 1 (was buggy)
             const tx = await connection.getTransaction(signature, { commitment: 'confirmed' });
             if (!tx || !tx.meta || tx.meta.err) return;
 
-            const sender = tx.transaction.message.accountKeys[0].toBase58();
-            const recipient = tx.transaction.message.accountKeys[1].toBase58();
-            const pre = tx.meta.preBalances[1];
-            const post = tx.meta.postBalances[1];
-            const amount = pre - post;
+            const accountKeys = tx.transaction.message.accountKeys.map(key => key.toBase58());
 
-            if (recipient === LOTTERY_ADDRESS && amount === LOTTERY_ENTRY_AMOUNT) {
+            // Find our wallet index in accountKeys
+            const recipientIndex = accountKeys.indexOf(LOTTERY_ADDRESS);
+            if (recipientIndex === -1) return;
+
+            // Find sender index: it's the first account whose preBalance > postBalance
+            let sender = null;
+            for (let i = 0; i < accountKeys.length; ++i) {
+                if (
+                    i !== recipientIndex &&
+                    tx.meta.preBalances[i] > tx.meta.postBalances[i]
+                ) {
+                    sender = accountKeys[i];
+                    break;
+                }
+            }
+            if (!sender) return;
+
+            // Compute amount received
+            const amount = tx.meta.postBalances[recipientIndex] - tx.meta.preBalances[recipientIndex];
+
+            // Accept if amount is close enough (for dust/tiny differences)
+            if (Math.abs(amount - LOTTERY_ENTRY_AMOUNT) <= AMOUNT_TOLERANCE) {
                 if (!lotteryState.participants.includes(sender)) {
                     logger.info(`Valid entry from ${sender}`, { signature });
                     lotteryState.participants.push(sender);
