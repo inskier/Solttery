@@ -86,9 +86,81 @@ app.use(bodyParser.json());
 
 app.use('/status', rateLimit({ windowMs: 15 * 60 * 1000, max: 100 }));
 
-// Serve a basic HTML UI
 app.get('/', (req, res) => {
-    res.send(`<!DOCTYPE html><html><head><title>Solana Lottery</title></head><body><h1>Solana Lottery</h1><p>Status: ${lotteryState.status}</p><p>Participants: ${lotteryState.participants.length}</p><p>Pool: ${lotteryState.pool} SOL</p><p>Recent Depositors: ${lotteryState.recentDepositors.join(', ')}</p><p>Past Winners: ${lotteryState.pastWinners.join(', ')}</p><p>Wallet Balance: ${lotteryState.balance} SOL</p></body></html>`);
+    res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Solana Lottery</title>
+  <style>
+    body {
+      background-color: #0f0f0f;
+      color: #00ff88;
+      font-family: monospace;
+      padding: 20px;
+    }
+    h1 {
+      color: #ffaa00;
+      text-align: center;
+    }
+    .section {
+      border: 1px solid #00ff88;
+      padding: 15px;
+      margin: 10px 0;
+      background: #1a1a1a;
+      border-radius: 5px;
+    }
+    .label {
+      font-weight: bold;
+    }
+    .address {
+      font-size: 12px;
+      color: #66ffcc;
+    }
+  </style>
+  <script>
+    async function fetchAndUpdate() {
+      try {
+        const res = await fetch('/status');
+        const data = await res.json();
+        document.getElementById('status').innerText = data.status;
+        document.getElementById('participants').innerText = data.participants + ' / ${MAX_PARTICIPANTS}';
+        document.getElementById('pool').innerText = data.pool + ' SOL';
+        document.getElementById('balance').innerText = data.balance + ' SOL';
+        document.getElementById('recent-depositors').innerHTML = data.recentDepositors.map(addr => `<div class='address'>${addr}</div>`).join('') || 'None yet';
+        document.getElementById('past-winners').innerHTML = data.pastWinners.map(addr => `<div class='address'>${addr}</div>`).join('') || 'None yet';
+      } catch (e) {
+        console.error('Update failed', e);
+      }
+    }
+    setInterval(fetchAndUpdate, 3000);
+    window.onload = fetchAndUpdate;
+  </script>
+</head>
+<body>
+  <h1>🎰 Solana Lottery</h1>
+  <div class="section">
+    <div class="label">Status:</div> <div id="status"></div>
+  </div>
+  <div class="section">
+    <div class="label">Participants:</div> <div id="participants"></div>
+  </div>
+  <div class="section">
+    <div class="label">Pool:</div> <div id="pool"></div>
+  </div>
+  <div class="section">
+    <div class="label">Recent Depositors:</div>
+    <div id="recent-depositors"></div>
+  </div>
+  <div class="section">
+    <div class="label">Past Winners:</div>
+    <div id="past-winners"></div>
+  </div>
+  <div class="section">
+    <div class="label">Wallet Balance:</div> <div id="balance"></div>
+  </div>
+</body>
+</html>`);
 });
 
 app.get('/status', (req, res) => {
@@ -118,159 +190,5 @@ wss.on('connection', (ws) => {
         }
     };
 });
-
-async function monitorTransactions() {
-    connection.onLogs(LOTTERY_WALLET.publicKey, async (logInfo) => {
-        try {
-            const signature = logInfo.signature;
-            if (lotteryState.transactionsSeen.has(signature) || lotteryState.status !== 'Active') return;
-
-            lotteryState.transactionsSeen.add(signature);
-            if (lotteryState.transactionsSeen.size > MAX_TRANSACTIONS_SEEN) {
-                const oldest = Array.from(lotteryState.transactionsSeen)[0];
-                lotteryState.transactionsSeen.delete(oldest);
-            }
-
-            const tx = await connection.getTransaction(signature, { commitment: 'confirmed' });
-            if (!tx || !tx.meta || tx.meta.err) return;
-
-            const sender = tx.transaction.message.accountKeys[0].toBase58();
-            const recipient = tx.transaction.message.accountKeys[1].toBase58();
-            const pre = tx.meta.preBalances[1];
-            const post = tx.meta.postBalances[1];
-            const amount = pre - post;
-
-            if (recipient === LOTTERY_ADDRESS && amount === LOTTERY_ENTRY_AMOUNT) {
-                logger.info(`Valid entry from ${sender}`, { signature });
-                lotteryState.participants.push(sender);
-                lotteryState.pool += 0.01;
-                lotteryState.recentDepositors.unshift(sender);
-                if (lotteryState.recentDepositors.length > 5) lotteryState.recentDepositors.pop();
-                await updateBalance();
-                await saveState();
-                broadcastState();
-
-                if (lotteryState.participants.length === MAX_PARTICIPANTS) {
-                    await pickWinner();
-                }
-            }
-        } catch (error) {
-            logger.error('Transaction monitoring error', { error: error.message, signature });
-            broadcastState(`Transaction processing failed: ${error.message} (Signature: ${signature})`);
-        }
-    }, 'confirmed');
-}
-
-async function updateBalance() {
-    try {
-        const balanceLamports = await connection.getBalance(LOTTERY_WALLET.publicKey);
-        lotteryState.balance = (balanceLamports / solanaWeb3.LAMPORTS_PER_SOL).toFixed(4);
-        await saveState();
-        broadcastState();
-    } catch (error) {
-        logger.error('Balance fetch failed', { error: error.message });
-    }
-}
-
-async function pickWinner() {
-    try {
-        lotteryState.status = 'Processing';
-        broadcastState();
-        await saveState();
-
-        const winnerIndex = crypto.randomInt(0, MAX_PARTICIPANTS);
-        const winnerAddress = lotteryState.participants[winnerIndex];
-        const toPubkey = new solanaWeb3.PublicKey(winnerAddress);
-
-        const balance = await connection.getBalance(LOTTERY_WALLET.publicKey);
-        const feeEstimate = await connection.getFeeForMessage(
-            new solanaWeb3.Message({
-                accountKeys: [LOTTERY_WALLET.publicKey.toBase58(), winnerAddress],
-                instructions: [
-                    solanaWeb3.SystemProgram.transfer({
-                        fromPubkey: LOTTERY_WALLET.publicKey,
-                        toPubkey: new solanaWeb3.PublicKey(winnerAddress),
-                        lamports: WINNING_PAYOUT
-                    })
-                ],
-                recentBlockhash: (await connection.getLatestBlockhash()).blockhash
-            })
-        );
-        if (balance < WINNING_PAYOUT + (feeEstimate.value || MINIMUM_FEE_LAMPORTS)) {
-            throw new Error('Insufficient funds for payout');
-        }
-
-        const tx = new solanaWeb3.Transaction().add(
-            solanaWeb3.SystemProgram.transfer({
-                fromPubkey: LOTTERY_WALLET.publicKey,
-                toPubkey,
-                lamports: WINNING_PAYOUT
-            })
-        );
-
-        let attempts = 0;
-        const maxAttempts = 3;
-        while (attempts < maxAttempts) {
-            try {
-                const { blockhash } = await connection.getLatestBlockhash();
-                tx.recentBlockhash = blockhash;
-                const signature = await solanaWeb3.sendAndConfirmTransaction(connection, tx, [LOTTERY_WALLET]);
-                logger.info(`Winner: ${winnerAddress}, Payout sent`, { signature });
-                lotteryState.winner = winnerAddress;
-                lotteryState.status = 'Complete';
-                lotteryState.pastWinners.unshift(winnerAddress);
-                if (lotteryState.pastWinners.length > 5) lotteryState.pastWinners.pop();
-                break;
-            } catch (error) {
-                attempts++;
-                if (attempts === maxAttempts) throw error;
-                await new Promise(resolve => setTimeout(resolve, 1000));
-            }
-        }
-
-        broadcastState();
-        await saveState();
-        setTimeout(async () => resetLottery(), 5000);
-    } catch (error) {
-        logger.error('Error picking winner', { error: error.message });
-        lotteryState.status = 'Error';
-        broadcastState(`Payout failed: ${error.message}`);
-        await saveState();
-        setTimeout(async () => resetLottery(), 10000);
-    }
-}
-
-async function resetLottery() {
-    lotteryState = {
-        participants: [],
-        pool: 0,
-        status: 'Active',
-        winner: null,
-        transactionsSeen: new Set(),
-        recentDepositors: [],
-        pastWinners: lotteryState.pastWinners || [],
-        balance: lotteryState.balance || 0
-    };
-    await saveState();
-    broadcastState();
-    logger.info('Lottery reset');
-}
-
-function broadcastState(error = null) {
-    const payload = error ? { error } : lotteryState;
-    wss.clients.forEach(client => {
-        if (client.readyState === 1) {
-            client.send(JSON.stringify(payload));
-        }
-    });
-}
-
-async function start() {
-    await fs.mkdir('backup', { recursive: true });
-    await loadState();
-    await updateBalance();
-    monitorTransactions();
-    server.listen(PORT, () => logger.info(`Lottery server running on port ${PORT}`));
-}
 
 start();
