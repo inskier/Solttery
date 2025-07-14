@@ -98,6 +98,7 @@ app.use('/status', rateLimit({ windowMs: 15 * 60 * 1000, max: 100 }));
 
 // Serve Frontend
 const wsProtocol = process.env.NODE_ENV === 'production' ? 'wss' : 'ws';
+const escapedWsProtocol = wsProtocol.replace(/'/g, "\\'"); // Precompute escaped value on server
 app.get('/', (req, res) => {
     res.send(`
         <!DOCTYPE html>
@@ -230,7 +231,7 @@ app.get('/', (req, res) => {
                 <script>
                     const LOTTERY_ADDRESS = '${LOTTERY_ADDRESS}'; // Pass as a client-side variable
                     const NETWORK = '${NETWORK}'; // Pass as a client-side variable
-                    const wsProtocol = '${wsProtocol.replace(/'/g, "\\'")}'; // Escape single quotes and pass as a client-side variable
+                    const wsProtocol = '${escapedWsProtocol}'; // Use precomputed escaped value
                     const ws = new WebSocket(wsProtocol + '://' + location.host);
                     const connection = new solanaWeb3.Connection('https://api.' + NETWORK + '.solana.com', 'confirmed');
                     const LOTTERY_WALLET = new solanaWeb3.PublicKey(LOTTERY_ADDRESS);
