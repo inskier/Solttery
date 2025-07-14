@@ -1,4 +1,3 @@
-
 # Node.js dependencies
 node_modules/
 .env
@@ -13,3 +12,7 @@ logs
 
 # State files
 lottery-state.json
+
+# Backup files
+backup/
+backup/*
