@@ -269,7 +269,7 @@ app.get('/', (req, res) => {
         document.getElementById('participants').innerText = data.participants + ' / ' + ${MAX_PARTICIPANTS};
         document.getElementById('pool').innerText = data.pool + ' SOL';
         document.getElementById('balance').innerText = data.balance + ' SOL';
-        document.getElementById('recent-depositors').innerHTML = (data.recentDepositors.map(addr => `<div class='address'>${addr}</div>`).join('')) || 'None yet';
+        document.getElementById('recent-depositors').innerHTML = (data.recentDepositors.map(addr => `<div class='address'>${addr}</div>`).join('') || 'None yet');
         document.getElementById('past-winners').innerHTML = data.pastWinners.map(addr => `<div class='address'>${addr}</div>`).join('') || 'None yet';
         const now = new Date().toLocaleTimeString();
         document.getElementById('last-updated').innerText = 'Updated at: ' + now;
@@ -307,7 +307,6 @@ app.get('/', (req, res) => {
   </div>
 </body>
 </html>`);
-
 });
 
 app.get('/status', (req, res) => {
