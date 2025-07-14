@@ -228,9 +228,10 @@ app.get('/', (req, res) => {
                     <div id="lottery-status"></div>
                 </div>
                 <script>
+                    const LOTTERY_ADDRESS = '${LOTTERY_ADDRESS}'; // Pass as a client-side variable
                     const ws = new WebSocket('${wsProtocol}://' + location.host);
                     const connection = new solanaWeb3.Connection('https://api.${NETWORK}.solana.com', 'confirmed');
-                    const LOTTERY_WALLET = new solanaWeb3.PublicKey('${LOTTERY_ADDRESS}');
+                    const LOTTERY_WALLET = new solanaWeb3.PublicKey(LOTTERY_ADDRESS);
                     const statusDiv = document.getElementById('lottery-status');
                     const balanceDiv = document.getElementById('wallet-balance');
                     const countdownDiv = document.getElementById('countdown');
