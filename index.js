@@ -219,7 +219,95 @@ app.use(bodyParser.json());
 app.use('/status', rateLimit({ windowMs: 15 * 60 * 1000, max: 100 }));
 
 app.get('/', (req, res) => {
-    res.sendFile(__dirname + '/index.html');
+    res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Solana Lottery</title>
+  <style>
+    body {
+      background-color: #0f0f0f;
+      color: #00ff88;
+      font-family: monospace;
+      padding: 20px;
+    }
+    h1 {
+      color: #ffaa00;
+      text-align: center;
+    }
+    .section {
+      border: 1px solid #00ff88;
+      padding: 15px;
+      margin: 10px 0;
+      background: #1a1a1a;
+      border-radius: 5px;
+    }
+    .label {
+      font-weight: bold;
+    }
+    .address {
+      font-size: 12px;
+      color: #66ffcc;
+    }
+  </style>
+  <script>
+    let balanceCountdown = 5;
+    let txCountdown = 3;
+    function countdown() {
+      document.getElementById('countdown-balance').innerText = balanceCountdown + 's';
+      document.getElementById('countdown-tx').innerText = txCountdown + 's';
+      if (--balanceCountdown < 0) balanceCountdown = 5;
+      if (--txCountdown < 0) txCountdown = 3;
+    }
+    setInterval(countdown, 1000);
+
+    async function fetchAndUpdate() {
+      try {
+        const res = await fetch('/status');
+        const data = await res.json();
+        document.getElementById('status').innerText = data.status;
+        document.getElementById('participants').innerText = data.participants + ' / ' + ${MAX_PARTICIPANTS};
+        document.getElementById('pool').innerText = data.pool + ' SOL';
+        document.getElementById('balance').innerText = data.balance + ' SOL';
+        document.getElementById('recent-depositors').innerHTML = data.recentDepositors.map(addr => `<div class='address'>${addr}</div>`).join('') || 'None yet';
+        document.getElementById('past-winners').innerHTML = data.pastWinners.map(addr => `<div class='address'>${addr}</div>`).join('') || 'None yet';
+        const now = new Date().toLocaleTimeString();
+        document.getElementById('last-updated').innerText = 'Updated at: ' + now;
+      } catch (e) {
+        console.error('Update failed', e);
+      }
+    }
+    setInterval(fetchAndUpdate, 3000);
+    window.onload = fetchAndUpdate;
+  </script>
+</head>
+<body>
+  <h1>🎰 Solana Lottery</h1>
+  <div class="section">
+    <div class="label">Status:</div> <div id="status"></div>
+  </div>
+  <div class="section">
+    <div class="label">Participants:</div> <div id="participants"></div>
+  </div>
+  <div class="section">
+    <div class="label">Pool:</div> <div id="pool"></div>
+  </div>
+  <div class="section">
+    <div class="label">Recent Depositors:</div>
+    <div id="recent-depositors"></div>
+  </div>
+  <div class="section">
+    <div class="label">Past Winners:</div>
+    <div id="past-winners"></div>
+  </div>
+  <div class="section">
+    <div class="label">Wallet Balance:</div> <div id="balance"></div>
+    <div id="last-updated" style="font-size: 10px; color: #888"></div>
+    <div style="font-size: 10px; color: #444">Next balance update in <span id="countdown-balance">5s</span> | Tx check in <span id="countdown-tx">3s</span></div>
+  </div>
+</body>
+</html>`);
+
 });
 
 app.get('/status', (req, res) => {
