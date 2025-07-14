@@ -266,7 +266,7 @@ app.get('/', (req, res) => {
         const res = await fetch('/status');
         const data = await res.json();
         document.getElementById('status').innerText = data.status;
-        document.getElementById('participants').innerText = data.participants + ' / ' + ${MAX_PARTICIPANTS};
+        document.getElementById('participants').innerText = data.participants + ' / ' + 5; // Fixed to use literal 5
         document.getElementById('pool').innerText = data.pool + ' SOL';
         document.getElementById('balance').innerText = data.balance + ' SOL';
         document.getElementById('recent-depositors').innerHTML = data.recentDepositors.map(addr => `<div class='address'>${addr}</div>`).join('') || 'None yet';
