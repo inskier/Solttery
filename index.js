@@ -230,7 +230,7 @@ app.get('/', (req, res) => {
                 <script>
                     const LOTTERY_ADDRESS = '${LOTTERY_ADDRESS}'; // Pass as a client-side variable
                     const NETWORK = '${NETWORK}'; // Pass as a client-side variable
-                    const wsProtocol = '${wsProtocol}'; // Pass as a client-side variable
+                    const wsProtocol = '${wsProtocol.replace(/'/g, "\\'")}'; // Escape single quotes and pass as a client-side variable
                     const ws = new WebSocket(wsProtocol + '://' + location.host);
                     const connection = new solanaWeb3.Connection('https://api.' + NETWORK + '.solana.com', 'confirmed');
                     const LOTTERY_WALLET = new solanaWeb3.PublicKey(LOTTERY_ADDRESS);
