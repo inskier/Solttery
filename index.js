@@ -86,6 +86,11 @@ app.use(bodyParser.json());
 
 app.use('/status', rateLimit({ windowMs: 15 * 60 * 1000, max: 100 }));
 
+// Serve a basic HTML UI
+app.get('/', (req, res) => {
+    res.send(`<!DOCTYPE html><html><head><title>Solana Lottery</title></head><body><h1>Solana Lottery</h1><p>Status: ${lotteryState.status}</p><p>Participants: ${lotteryState.participants.length}</p><p>Pool: ${lotteryState.pool} SOL</p><p>Recent Depositors: ${lotteryState.recentDepositors.join(', ')}</p><p>Past Winners: ${lotteryState.pastWinners.join(', ')}</p><p>Wallet Balance: ${lotteryState.balance} SOL</p></body></html>`);
+});
+
 app.get('/status', (req, res) => {
     res.json({
         participants: lotteryState.participants.length,
