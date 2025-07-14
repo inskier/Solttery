@@ -436,6 +436,49 @@ app.get('/', (req, res) => {
       transition: all 0.2s ease;
     }
     
+    .wallet-address {
+      font-size: 11px;
+      color: #ffff00;
+      background: #004400;
+      padding: 8px;
+      margin: 5px 0;
+      border: 2px solid #ffff00;
+      border-radius: 5px;
+      font-family: 'Courier New', monospace;
+      text-shadow: 0 0 8px #ffff00;
+      word-break: break-all;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    
+    .wallet-address:hover {
+      background: #006600;
+      transform: scale(1.02);
+      box-shadow: 0 0 15px rgba(255, 255, 0, 0.5);
+    }
+    
+    .wallet-address::before {
+      content: '🔑 ';
+      margin-right: 5px;
+    }
+    
+    .copy-button {
+      background: #ff4444;
+      color: white;
+      border: none;
+      padding: 5px 10px;
+      font-size: 8px;
+      font-family: 'Press Start 2P', monospace;
+      cursor: pointer;
+      margin-left: 10px;
+      transition: all 0.2s ease;
+    }
+    
+    .copy-button:hover {
+      background: #ff6666;
+      transform: scale(1.1);
+    }
+    
     .participants-bar {
       width: 100%;
       height: 20px;
@@ -563,6 +606,17 @@ app.get('/', (req, res) => {
     </div>
     
     <div class="section">
+      <div class="label">[ LOTTERY WALLET ADDRESS ]</div>
+      <div class="wallet-address" id="wallet-address" onclick="copyToClipboard(this.textContent)">
+        Loading...
+        <button class="copy-button" onclick="event.stopPropagation(); copyToClipboard(document.getElementById('wallet-address').textContent.replace('🔑 ', ''))">COPY</button>
+      </div>
+      <div style="font-size: 8px; color: #888; margin-top: 5px;">
+        💰 Send exactly 0.01 SOL to join the lottery!
+      </div>
+    </div>
+    
+    <div class="section">
       <div class="label">[ SYSTEM STATUS ]</div>
       <div class="value"><span id="status" class="status-active">LOADING...</span><span class="dos-cursor">_</span></div>
     </div>
@@ -612,12 +666,41 @@ app.get('/', (req, res) => {
       if (--txCountdown < 0) txCountdown = 3;
     }
     
+    function copyToClipboard(text) {
+      // Remove the key emoji if present
+      const cleanText = text.replace('🔑 ', '').trim();
+      navigator.clipboard.writeText(cleanText).then(function() {
+        // Visual feedback
+        const button = event.target;
+        const originalText = button.textContent;
+        button.textContent = 'COPIED!';
+        button.style.background = '#00ff00';
+        setTimeout(() => {
+          button.textContent = originalText;
+          button.style.background = '#ff4444';
+        }, 2000);
+      }).catch(function() {
+        // Fallback for older browsers
+        const textArea = document.createElement('textarea');
+        textArea.value = cleanText;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        alert('Wallet address copied to clipboard!');
+      });
+    }
+    
     setInterval(countdown, 1000);
 
     async function fetchAndUpdate() {
       try {
         const res = await fetch('/status');
         const data = await res.json();
+        
+        // Update wallet address
+        document.getElementById('wallet-address').innerHTML = 
+          data.wallet + '<button class="copy-button" onclick="event.stopPropagation(); copyToClipboard(\'' + data.wallet + '\')">COPY</button>';
         
         // Update status with appropriate styling
         const statusEl = document.getElementById('status');
