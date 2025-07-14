@@ -1,5 +1,5 @@
 require('dotenv').config();
-// Autonomous Solana Lottery System - Crypto-Themed with 0.01 SOL Entry and 0.04 SOL Payout
+// Autonomous Solana Lottery System - Pixelated Retro Style with Balance Countdown
 const solanaWeb3 = require('@solana/web3.js');
 const express = require('express');
 const { Server } = require('ws');
@@ -105,77 +105,83 @@ app.get('/', (req, res) => {
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Solana Crypto Lottery</title>
+            <title>Solana Retro Lottery</title>
             <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.js"></script>
             <script src="https://unpkg.com/lucide@0.4.0/dist/umd/lucide.min.js"></script>
             <style>
+                @font-face {
+                    font-family: 'PixelFont';
+                    src: url('https://fonts.cdnfonts.com/s/174984/PressStart2P-Regular.woff') format('woff');
+                }
                 body {
-                    font-family: 'Courier New', monospace;
+                    font-family: 'PixelFont', monospace;
                     margin: 0;
                     padding: 0;
                     min-height: 100vh;
-                    background: linear-gradient(135deg, #0d0d2b, #1a1a3a, #2d2d4d);
-                    color: #00ffcc;
-                    text-shadow: 0 0 5px #00ffcc, 0 0 10px #00ffcc;
+                    background: #1a263a;
+                    color: #00cc00;
+                    image-rendering: pixelated;
                 }
                 .container {
-                    max-width: 1000px;
-                    margin: 0 auto;
-                    padding: 20px;
+                    max-width: 400px;
+                    margin: 10px auto;
+                    padding: 10px;
+                    border: 2px solid #00cc00;
+                    background: #0f1a2a;
                 }
                 h1 {
                     text-align: center;
-                    font-size: 2.5em;
-                    margin-bottom: 20px;
-                    color: #ff9900;
-                    text-shadow: 0 0 10px #ff9900;
+                    font-size: 24px;
+                    margin: 10px 0;
+                    color: #ff6600;
+                    text-shadow: 1px 1px 0 #000;
                 }
-                .crypto-card {
-                    background: rgba(15, 15, 35, 0.9);
-                    border: 2px solid #00ffcc;
-                    border-radius: 10px;
-                    padding: 15px;
-                    margin-bottom: 20px;
-                    box-shadow: 0 0 15px rgba(0, 255, 204, 0.3);
+                .retro-card {
+                    border: 2px solid #00cc00;
+                    background: #1a2f4a;
+                    padding: 8px;
+                    margin-bottom: 10px;
+                    image-rendering: pixelated;
                 }
-                .crypto-grid {
+                .retro-grid {
                     display: grid;
-                    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-                    gap: 20px;
-                    margin-bottom: 20px;
+                    gap: 10px;
+                    margin-bottom: 10px;
                 }
                 .address {
-                    font-size: 0.9em;
+                    font-size: 12px;
                     word-break: break-all;
-                    color: #66ffcc;
+                    color: #66ff66;
                 }
-                .balance, .depositors, .winners {
-                    margin: 10px 0;
+                .balance, .depositors, .winners, .countdown {
+                    margin: 5px 0;
+                    font-size: 12px;
                 }
                 .button {
-                    padding: 10px 20px;
-                    background: #ff9900;
-                    color: #0d0d2b;
-                    border: none;
-                    border-radius: 5px;
+                    padding: 8px;
+                    background: #ff6600;
+                    color: #0f1a2a;
+                    border: 2px solid #000;
+                    border-radius: 0;
                     cursor: pointer;
-                    transition: background 0.3s;
+                    font-size: 12px;
                     width: 100%;
+                    image-rendering: pixelated;
                 }
                 .button:hover {
-                    background: #ffcc66;
+                    background: #ff9944;
                 }
                 .button:disabled {
-                    background: #666;
+                    background: #444;
                     cursor: not-allowed;
                 }
                 .loader {
-                    border: 4px solid #f3f3f3;
-                    border-top: 4px solid #ff9900;
+                    border: 2px solid #444;
+                    border-top: 2px solid #ff6600;
                     border-radius: 50%;
-                    width: 24px;
-                    height: 24px;
-                    animation: spin 1s linear infinite;
+                    width: 16px;
+                    height: 16px;
+                    animation: spin 0.5s linear infinite;
                     margin: 0 auto;
                     display: inline-block;
                 }
@@ -184,41 +190,42 @@ app.get('/', (req, res) => {
                     100% { transform: rotate(360deg); }
                 }
                 .network-indicator {
-                    font-size: 0.8em;
-                    color: #66ffcc;
+                    font-size: 10px;
+                    color: #66ff66;
                     text-align: center;
-                    margin-bottom: 10px;
+                    margin-bottom: 5px;
                 }
             </style>
         </head>
         <body>
             <div class="container">
-                <h1>🔮 Solana Crypto Lottery</h1>
-                <div class="network-indicator">Network: ${NETWORK}</div>
-                <div class="crypto-grid">
-                    <div class="crypto-card">
-                        <h2><i data-lucide="wallet" class="text-yellow-400"></i> Lottery Wallet</h2>
+                <h1>🔳 SOLANA LOTTERY</h1>
+                <div class="network-indicator">NET: ${NETWORK}</div>
+                <div class="retro-grid">
+                    <div class="retro-card">
+                        <h2><i data-lucide="wallet" style="width:16px;height:16px"></i> WALLET</h2>
                         <div class="address">${LOTTERY_ADDRESS}</div>
-                        <p>Send 0.01 SOL to participate</p>
-                        <div class="balance" id="wallet-balance">Balance: Loading...</div>
+                        <p>SEND 0.01 SOL</p>
+                        <div class="balance" id="wallet-balance">BAL: Loading...</div>
+                        <div class="countdown" id="countdown">CHECK: 5s (Balance checked last time: N/A)</div>
                     </div>
-                    <div class="crypto-card">
-                        <h2><i data-lucide="coins" class="text-green-400"></i> Join Lottery</h2>
-                        <button id="join-lottery" class="button">Send 0.01 SOL</button>
-                        <div id="error-message" class="error"></div>
+                    <div class="retro-card">
+                        <h2><i data-lucide="coin" style="width:16px;height:16px"></i> JOIN</h2>
+                        <button id="join-lottery" class="button">SEND 0.01 SOL</button>
+                        <div id="error-message" style="color:#ff4444"></div>
                     </div>
                 </div>
-                <div class="crypto-card">
-                    <h2><i data-lucide="users" class="text-blue-400"></i> Recent Depositors (Last 5)</h2>
+                <div class="retro-card">
+                    <h2><i data-lucide="users" style="width:16px;height:16px"></i> DEPOSITORS</h2>
                     <div id="recent-depositors"></div>
                 </div>
-                <div class="crypto-card">
-                    <h2><i data-lucide="trophy" class="text-yellow-400"></i> Past Winners (Last 5)</h2>
+                <div class="retro-card">
+                    <h2><i data-lucide="trophy" style="width:16px;height:16px"></i> WINNERS</h2>
                     <div id="past-winners"></div>
                 </div>
-                <div class="crypto-card">
-                    <h2><i data-lucide="info" class="text-purple-400"></i> Lottery Status</h2>
-                    <div id="lottery-status">Loading...</div>
+                <div class="retro-card">
+                    <h2><i data-lucide="info" style="width:16px;height:16px"></i> STATUS</h2>
+                    <div id="lottery-status"></div>
                 </div>
                 <script>
                     const ws = new WebSocket('${wsProtocol}://' + location.host);
@@ -226,30 +233,69 @@ app.get('/', (req, res) => {
                     const LOTTERY_WALLET = new solanaWeb3.PublicKey('${LOTTERY_ADDRESS}');
                     const statusDiv = document.getElementById('lottery-status');
                     const balanceDiv = document.getElementById('wallet-balance');
+                    const countdownDiv = document.getElementById('countdown');
                     const depositorsDiv = document.getElementById('recent-depositors');
                     const winnersDiv = document.getElementById('past-winners');
                     const joinButton = document.getElementById('join-lottery');
                     const errorDiv = document.getElementById('error-message');
 
-                    ws.onopen = () => console.log('Connected to lottery server');
+                    let countdown = 5;
+                    let countdownInterval;
+
+                    function startCountdown() {
+                        countdownDiv.textContent = `CHECK: ${countdown}s (Balance checked last time: ${new Date().toLocaleTimeString()})`;
+                        countdownInterval = setInterval(() => {
+                            countdown--;
+                            countdownDiv.textContent = `CHECK: ${countdown}s (Balance checked last time: ${new Date().toLocaleTimeString()})`;
+                            if (countdown <= 0) {
+                                clearInterval(countdownInterval);
+                                updateBalance();
+                                countdown = 5;
+                                startCountdown();
+                            }
+                        }, 1000);
+                    }
+
+                    async function updateBalance() {
+                        try {
+                            const balanceLamports = await connection.getBalance(LOTTERY_WALLET);
+                            const newBalance = (balanceLamports / solanaWeb3.LAMPORTS_PER_SOL).toFixed(4);
+                            balanceDiv.textContent = 'BAL: ' + newBalance + ' SOL';
+                            ws.send(JSON.stringify({ action: 'updateBalance', balance: newBalance }));
+                        } catch (error) {
+                            errorDiv.textContent = 'ERROR: Balance update failed';
+                            console.error(error);
+                        }
+                    }
+
+                    ws.onopen = () => {
+                        console.log('Connected to lottery server');
+                        startCountdown();
+                    };
                     ws.onmessage = (event) => {
                         try {
                             const data = JSON.parse(event.data);
                             if (data.error) {
-                                errorDiv.textContent = 'Error: ' + data.error;
+                                errorDiv.textContent = 'ERROR: ' + data.error;
+                                return;
+                            }
+                            if (data.action === 'updateBalance') {
+                                lotteryState.balance = data.balance;
+                                balanceDiv.textContent = 'BAL: ' + data.balance + ' SOL';
+                                countdownDiv.textContent = `CHECK: ${countdown}s (Balance checked last time: ${new Date().toLocaleTimeString()})`;
                                 return;
                             }
                             statusDiv.innerHTML = \`
-                                Participants: \${data.participants.length}/${MAX_PARTICIPANTS}<br>
-                                Prize Pool: \${data.pool.toFixed(2)} SOL<br>
-                                Status: \${data.status}<br>
-                                \${data.winner ? 'Current Winner: ' + data.winner : ''}
+                                PLAYERS: \${data.participants.length}/${MAX_PARTICIPANTS}<br>
+                                POOL: \${data.pool.toFixed(2)} SOL<br>
+                                STATUS: \${data.status}<br>
+                                \${data.winner ? 'WINNER: ' + data.winner : ''}
                             \`;
-                            balanceDiv.textContent = 'Balance: ' + data.balance + ' SOL';
+                            balanceDiv.textContent = 'BAL: ' + data.balance + ' SOL';
                             depositorsDiv.innerHTML = data.recentDepositors.map(d => \`<div class="address">\${d.slice(0, 8)}...\${d.slice(-8)}</div>\`).join('');
                             winnersDiv.innerHTML = data.pastWinners.map(w => \`<div class="address">\${w.slice(0, 8)}...\${w.slice(-8)}</div>\`).join('');
                         } catch (e) {
-                            errorDiv.textContent = 'Error: Invalid server message';
+                            errorDiv.textContent = 'ERROR: Invalid message';
                             console.error(e);
                         }
                     };
@@ -257,11 +303,11 @@ app.get('/', (req, res) => {
                     joinButton.addEventListener('click', async () => {
                         try {
                             if (!window.solana || !window.solana.isPhantom) {
-                                errorDiv.textContent = 'Phantom wallet not found. Install at https://phantom.app/';
+                                errorDiv.textContent = 'ERROR: Install Phantom at https://phantom.app/';
                                 return;
                             }
                             joinButton.disabled = true;
-                            joinButton.innerHTML = 'Sending <div class="loader"></div>';
+                            joinButton.innerHTML = 'SENDING <div class="loader"></div>';
                             const provider = window.solana;
                             const transaction = new solanaWeb3.Transaction().add(
                                 solanaWeb3.SystemProgram.transfer({
@@ -282,13 +328,13 @@ app.get('/', (req, res) => {
                                 lastValidBlockHeight: latestBlock.lastValidBlockHeight
                             }, 'confirmed');
 
-                            errorDiv.textContent = 'Entry sent! Transaction: ' + signature;
+                            errorDiv.textContent = 'SENT! TX: ' + signature;
                         } catch (error) {
-                            errorDiv.textContent = 'Error: ' + (error.message || 'Transaction failed');
+                            errorDiv.textContent = 'ERROR: ' + (error.message || 'Transaction failed');
                             console.error(error);
                         } finally {
                             joinButton.disabled = false;
-                            joinButton.textContent = 'Send 0.01 SOL';
+                            joinButton.textContent = 'SEND 0.01 SOL';
                         }
                     });
 
@@ -317,9 +363,17 @@ app.get('/status', (req, res) => {
 // WebSocket Handling
 wss.on('connection', (ws) => {
     ws.send(JSON.stringify(lotteryState));
-    ws.on('message', () => {
-        ws.send(JSON.stringify({ error: 'Messages not supported' }));
-    });
+    ws.onmessage = (message) => {
+        try {
+            const data = JSON.parse(message.data);
+            if (data.action === 'updateBalance') {
+                lotteryState.balance = data.balance;
+                broadcastState();
+            }
+        } catch (error) {
+            ws.send(JSON.stringify({ error: 'Messages not supported or invalid' }));
+        }
+    };
 });
 
 // Transaction Monitoring
@@ -372,6 +426,8 @@ async function updateBalance() {
     try {
         const balanceLamports = await connection.getBalance(LOTTERY_WALLET.publicKey);
         lotteryState.balance = (balanceLamports / solanaWeb3.LAMPORTS_PER_SOL).toFixed(4);
+        await saveState();
+        broadcastState();
     } catch (error) {
         logger.error('Balance fetch failed', { error: error.message });
     }
