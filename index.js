@@ -14,7 +14,7 @@ const winston = require('winston');
 const LOTTERY_ENTRY_AMOUNT = 0.01 * solanaWeb3.LAMPORTS_PER_SOL; // 0.01 SOL
 const WINNING_PAYOUT = 0.04 * solanaWeb3.LAMPORTS_PER_SOL; // 0.04 SOL
 const MAX_PARTICIPANTS = 5;
-const PORT = process.env.PORT; // Use Render's dynamically assigned port
+const PORT = process.env.PORT || 3000; // Use Render's port or default to 3000 for local testing
 const STATE_FILE = 'lottery-state.json';
 const NETWORK = process.env.SOLANA_NETWORK || 'mainnet-beta'; // Configurable: 'devnet' or 'mainnet-beta'
 const MAX_TRANSACTIONS_SEEN = 1000;
@@ -98,8 +98,126 @@ app.use('/status', rateLimit({ windowMs: 15 * 60 * 1000, max: 100 }));
 
 // Serve Frontend
 const wsProtocol = process.env.NODE_ENV === 'production' ? 'wss' : 'ws';
-const escapedWsProtocol = wsProtocol.replace(/'/g, "\\'"); // Precompute escaped value on server
+const escapedWsProtocol = wsProtocol.replace(/'/g, "\\'"); // Precompute escaped value
+const escapedLotteryAddress = LOTTERY_ADDRESS.replace(/'/g, "\\'"); // Escape single quotes
+const escapedNetwork = NETWORK.replace(/'/g, "\\'"); // Escape single quotes
+
 app.get('/', (req, res) => {
+    const script = `
+        const LOTTERY_ADDRESS = '${escapedLotteryAddress}';
+        const NETWORK = '${escapedNetwork}';
+        const wsProtocol = '${escapedWsProtocol}';
+        const ws = new WebSocket(wsProtocol + '://' + location.host);
+        const connection = new solanaWeb3.Connection('https://api.' + NETWORK + '.solana.com', 'confirmed');
+        const LOTTERY_WALLET = new solanaWeb3.PublicKey(LOTTERY_ADDRESS);
+        const statusDiv = document.getElementById('lottery-status');
+        const balanceDiv = document.getElementById('wallet-balance');
+        const countdownDiv = document.getElementById('countdown');
+        const depositorsDiv = document.getElementById('recent-depositors');
+        const winnersDiv = document.getElementById('past-winners');
+        const joinButton = document.getElementById('join-lottery');
+        const errorDiv = document.getElementById('error-message');
+
+        let countdown = 5;
+        let countdownInterval;
+
+        function startCountdown() {
+            countdownDiv.textContent = 'CHECK: ' + countdown + 's (Balance checked last time: ' + new Date().toLocaleTimeString() + ')';
+            countdownInterval = setInterval(() => {
+                countdown--;
+                countdownDiv.textContent = 'CHECK: ' + countdown + 's (Balance checked last time: ' + new Date().toLocaleTimeString() + ')';
+                if (countdown <= 0) {
+                    clearInterval(countdownInterval);
+                    updateBalance();
+                    countdown = 5;
+                    startCountdown();
+                }
+            }, 1000);
+        }
+
+        async function updateBalance() {
+            try {
+                const balanceLamports = await connection.getBalance(LOTTERY_WALLET);
+                const newBalance = (balanceLamports / solanaWeb3.LAMPORTS_PER_SOL).toFixed(4);
+                balanceDiv.textContent = 'BAL: ' + newBalance + ' SOL';
+                ws.send(JSON.stringify({ action: 'updateBalance', balance: newBalance }));
+            } catch (error) {
+                errorDiv.textContent = 'ERROR: Balance update failed';
+                console.error(error);
+            }
+        }
+
+        ws.onopen = () => {
+            console.log('Connected to lottery server');
+            startCountdown();
+        };
+        ws.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.error) {
+                    errorDiv.textContent = 'ERROR: ' + data.error;
+                    return;
+                }
+                if (data.action === 'updateBalance') {
+                    lotteryState.balance = data.balance;
+                    balanceDiv.textContent = 'BAL: ' + data.balance + ' SOL';
+                    countdownDiv.textContent = 'CHECK: ' + countdown + 's (Balance checked last time: ' + new Date().toLocaleTimeString() + ')';
+                    return;
+                }
+                statusDiv.innerHTML = 'PLAYERS: ' + data.participants.length + '/' + ${MAX_PARTICIPANTS} + '<br>' +
+                                     'POOL: ' + data.pool.toFixed(2) + ' SOL<br>' +
+                                     'STATUS: ' + data.status + '<br>' +
+                                     (data.winner ? 'WINNER: ' + data.winner : '');
+                balanceDiv.textContent = 'BAL: ' + data.balance + ' SOL';
+                depositorsDiv.innerHTML = data.recentDepositors.map(d => '<div class="address">' + d.slice(0, 8) + '...' + d.slice(-8) + '</div>').join('');
+                winnersDiv.innerHTML = data.pastWinners.map(w => '<div class="address">' + w.slice(0, 8) + '...' + w.slice(-8) + '</div>').join('');
+            } catch (e) {
+                errorDiv.textContent = 'ERROR: Invalid message';
+                console.error(e);
+            }
+        };
+
+        joinButton.addEventListener('click', async () => {
+            try {
+                if (!window.solana || !window.solana.isPhantom) {
+                    errorDiv.textContent = 'ERROR: Install Phantom at https://phantom.app/';
+                    return;
+                }
+                joinButton.disabled = true;
+                joinButton.innerHTML = 'SENDING <div class="loader"></div>';
+                const provider = window.solana;
+                const transaction = new solanaWeb3.Transaction().add(
+                    solanaWeb3.SystemProgram.transfer({
+                        fromPubkey: provider.publicKey,
+                        toPubkey: LOTTERY_WALLET,
+                        lamports: ${LOTTERY_ENTRY_AMOUNT}
+                    })
+                );
+                transaction.feePayer = provider.publicKey;
+                const latestBlock = await connection.getLatestBlockhash();
+                transaction.recentBlockhash = latestBlock.blockhash;
+
+                const signed = await provider.signTransaction(transaction);
+                const signature = await connection.sendRawTransaction(signed.serialize());
+                await connection.confirmTransaction({
+                    signature,
+                    blockhash: latestBlock.blockhash,
+                    lastValidBlockHeight: latestBlock.lastValidBlockHeight
+                }, 'confirmed');
+
+                errorDiv.textContent = 'SENT! TX: ' + signature;
+            } catch (error) {
+                errorDiv.textContent = 'ERROR: ' + (error.message || 'Transaction failed');
+                console.error(error);
+            } finally {
+                joinButton.disabled = false;
+                joinButton.textContent = 'SEND 0.01 SOL';
+            }
+        });
+
+        lucide.createIcons();
+    `.replace(/\n\s*/g, ''); // Remove unnecessary newlines and spaces
+
     res.send(`
         <!DOCTYPE html>
         <html lang="en">
@@ -228,122 +346,7 @@ app.get('/', (req, res) => {
                     <h2><i data-lucide="info" style="width:16px;height:16px"></i> STATUS</h2>
                     <div id="lottery-status"></div>
                 </div>
-                <script>
-                    const LOTTERY_ADDRESS = '${LOTTERY_ADDRESS}'; // Pass as a client-side variable
-                    const NETWORK = '${NETWORK}'; // Pass as a client-side variable
-                    const wsProtocol = '${escapedWsProtocol}'; // Use precomputed escaped value
-                    const ws = new WebSocket(wsProtocol + '://' + location.host);
-                    const connection = new solanaWeb3.Connection('https://api.' + NETWORK + '.solana.com', 'confirmed');
-                    const LOTTERY_WALLET = new solanaWeb3.PublicKey(LOTTERY_ADDRESS);
-                    const statusDiv = document.getElementById('lottery-status');
-                    const balanceDiv = document.getElementById('wallet-balance');
-                    const countdownDiv = document.getElementById('countdown');
-                    const depositorsDiv = document.getElementById('recent-depositors');
-                    const winnersDiv = document.getElementById('past-winners');
-                    const joinButton = document.getElementById('join-lottery');
-                    const errorDiv = document.getElementById('error-message');
-
-                    let countdown = 5;
-                    let countdownInterval;
-
-                    function startCountdown() {
-                        countdownDiv.textContent = `CHECK: ${countdown}s (Balance checked last time: ${new Date().toLocaleTimeString()})`;
-                        countdownInterval = setInterval(() => {
-                            countdown--;
-                            countdownDiv.textContent = `CHECK: ${countdown}s (Balance checked last time: ${new Date().toLocaleTimeString()})`;
-                            if (countdown <= 0) {
-                                clearInterval(countdownInterval);
-                                updateBalance();
-                                countdown = 5;
-                                startCountdown();
-                            }
-                        }, 1000);
-                    }
-
-                    async function updateBalance() {
-                        try {
-                            const balanceLamports = await connection.getBalance(LOTTERY_WALLET);
-                            const newBalance = (balanceLamports / solanaWeb3.LAMPORTS_PER_SOL).toFixed(4);
-                            balanceDiv.textContent = 'BAL: ' + newBalance + ' SOL';
-                            ws.send(JSON.stringify({ action: 'updateBalance', balance: newBalance }));
-                        } catch (error) {
-                            errorDiv.textContent = 'ERROR: Balance update failed';
-                            console.error(error);
-                        }
-                    }
-
-                    ws.onopen = () => {
-                        console.log('Connected to lottery server');
-                        startCountdown();
-                    };
-                    ws.onmessage = (event) => {
-                        try {
-                            const data = JSON.parse(event.data);
-                            if (data.error) {
-                                errorDiv.textContent = 'ERROR: ' + data.error;
-                                return;
-                            }
-                            if (data.action === 'updateBalance') {
-                                lotteryState.balance = data.balance;
-                                balanceDiv.textContent = 'BAL: ' + data.balance + ' SOL';
-                                countdownDiv.textContent = `CHECK: ${countdown}s (Balance checked last time: ${new Date().toLocaleTimeString()})`;
-                                return;
-                            }
-                            statusDiv.innerHTML = \`
-                                PLAYERS: \${data.participants.length}/${MAX_PARTICIPANTS}<br>
-                                POOL: \${data.pool.toFixed(2)} SOL<br>
-                                STATUS: \${data.status}<br>
-                                \${data.winner ? 'WINNER: ' + data.winner : ''}
-                            \`;
-                            balanceDiv.textContent = 'BAL: ' + data.balance + ' SOL';
-                            depositorsDiv.innerHTML = data.recentDepositors.map(d => \`<div class="address">\${d.slice(0, 8)}...\${d.slice(-8)}</div>\`).join('');
-                            winnersDiv.innerHTML = data.pastWinners.map(w => \`<div class="address">\${w.slice(0, 8)}...\${w.slice(-8)}</div>\`).join('');
-                        } catch (e) {
-                            errorDiv.textContent = 'ERROR: Invalid message';
-                            console.error(e);
-                        }
-                    };
-
-                    joinButton.addEventListener('click', async () => {
-                        try {
-                            if (!window.solana || !window.solana.isPhantom) {
-                                errorDiv.textContent = 'ERROR: Install Phantom at https://phantom.app/';
-                                return;
-                            }
-                            joinButton.disabled = true;
-                            joinButton.innerHTML = 'SENDING <div class="loader"></div>';
-                            const provider = window.solana;
-                            const transaction = new solanaWeb3.Transaction().add(
-                                solanaWeb3.SystemProgram.transfer({
-                                    fromPubkey: provider.publicKey,
-                                    toPubkey: LOTTERY_WALLET,
-                                    lamports: ${LOTTERY_ENTRY_AMOUNT}
-                                })
-                            );
-                            transaction.feePayer = provider.publicKey;
-                            const latestBlock = await connection.getLatestBlockhash();
-                            transaction.recentBlockhash = latestBlock.blockhash;
-
-                            const signed = await provider.signTransaction(transaction);
-                            const signature = await connection.sendRawTransaction(signed.serialize());
-                            await connection.confirmTransaction({
-                                signature,
-                                blockhash: latestBlock.blockhash,
-                                lastValidBlockHeight: latestBlock.lastValidBlockHeight
-                            }, 'confirmed');
-
-                            errorDiv.textContent = 'SENT! TX: ' + signature;
-                        } catch (error) {
-                            errorDiv.textContent = 'ERROR: ' + (error.message || 'Transaction failed');
-                            console.error(error);
-                        } finally {
-                            joinButton.disabled = false;
-                            joinButton.textContent = 'SEND 0.01 SOL';
-                        }
-                    });
-
-                    lucide.createIcons();
-                </script>
+                <script>${script}</script>
             </div>
         </body>
         </html>
@@ -423,7 +426,7 @@ async function monitorTransactions() {
             broadcastState(`Transaction processing failed: ${error.message} (Signature: ${signature})`);
         }
     }, 'confirmed');
-}
+});
 
 // Update Balance
 async function updateBalance() {
