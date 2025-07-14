@@ -32,13 +32,20 @@ const logger = winston.createLogger({
 });
 
 const connection = new solanaWeb3.Connection(solanaWeb3.clusterApiUrl(NETWORK), 'confirmed');
+
 const secretKey = Uint8Array.from(JSON.parse(process.env.PRIVATE_KEY_JSON || '[]'));
 const LOTTERY_WALLET = solanaWeb3.Keypair.fromSecretKey(secretKey);
 const LOTTERY_ADDRESS = LOTTERY_WALLET.publicKey.toBase58();
 
 let lotteryState = {
-    participants: [], pool: 0, status: 'Active', winner: null,
-    transactionsSeen: new Set(), recentDepositors: [], pastWinners: [], balance: 0
+    participants: [],
+    pool: 0,
+    status: 'Active',
+    winner: null,
+    transactionsSeen: new Set(),
+    recentDepositors: [],
+    pastWinners: [],
+    balance: 0
 };
 
 async function loadState() {
@@ -60,6 +67,7 @@ async function saveState() {
             ...lotteryState,
             transactionsSeen: Array.from(lotteryState.transactionsSeen).slice(-MAX_TRANSACTIONS_SEEN)
         }));
+
         try {
             const stats = await fs.stat(STATE_FILE);
             if (Date.now() - stats.mtimeMs > 7 * 24 * 60 * 60 * 1000) {
@@ -104,33 +112,27 @@ async function pickWinner() {
         const winnerIndex = crypto.randomInt(0, lotteryState.participants.length);
         const winnerAddress = lotteryState.participants[winnerIndex];
         const toPubkey = new solanaWeb3.PublicKey(winnerAddress);
-
         const { blockhash } = await connection.getLatestBlockhash();
-        const message = new solanaWeb3.Message({
-            accountKeys: [
-                { pubkey: LOTTERY_WALLET.publicKey, isSigner: true, isWritable: true },
-                { pubkey: toPubkey, isSigner: false, isWritable: true }
-            ],
-            instructions: [
-                solanaWeb3.SystemProgram.transfer({
-                    fromPubkey: LOTTERY_WALLET.publicKey,
-                    toPubkey,
-                    lamports: WINNING_PAYOUT
-                })
-            ],
-            recentBlockhash: blockhash
-        });
-        const feeEstimate = await connection.getFeeForMessage(message);
+
+        const tx = new solanaWeb3.Transaction().add(
+            solanaWeb3.SystemProgram.transfer({
+                fromPubkey: LOTTERY_WALLET.publicKey,
+                toPubkey,
+                lamports: WINNING_PAYOUT
+            })
+        );
+
+        tx.recentBlockhash = blockhash;
+        tx.feePayer = LOTTERY_WALLET.publicKey;
+
+        const feeEstimate = await connection.getFeeForMessage(tx.compileMessage());
         const balance = await connection.getBalance(LOTTERY_WALLET.publicKey);
         if (balance < WINNING_PAYOUT + (feeEstimate.value || MINIMUM_FEE_LAMPORTS)) {
             throw new Error('Insufficient funds for payout');
         }
 
-        const tx = new solanaWeb3.Transaction().add(message.instructions[0]);
-        tx.recentBlockhash = blockhash;
-        tx.feePayer = LOTTERY_WALLET.publicKey;
-
         const signature = await solanaWeb3.sendAndConfirmTransaction(connection, tx, [LOTTERY_WALLET]);
+
         logger.info(`Winner selected: ${winnerAddress}, TX: ${signature}`);
         lotteryState.winner = winnerAddress;
         lotteryState.status = 'Complete';
@@ -148,14 +150,112 @@ async function pickWinner() {
     }
 }
 
-async def resetLottery():
+async function resetLottery() {
     lotteryState = {
-        participants: [], pool: 0, status: 'Active', winner: null,
-        transactionsSeen: new Set(), recentDepositors: [],
-        pastWinners: lotteryState.pastWinners, balance: lotteryState.balance
-    }
-    await saveState()
-    broadcastState()
-    logger.info('Lottery reset')
+        participants: [],
+        pool: 0,
+        status: 'Active',
+        winner: null,
+        transactionsSeen: new Set(),
+        recentDepositors: [],
+        pastWinners: lotteryState.pastWinners,
+        balance: lotteryState.balance
+    };
+    await saveState();
+    broadcastState();
+    logger.info('Lottery reset');
+}
 
-# Continue with monitorTransactions, express app, WebSocket and start function next
+async function monitorTransactions() {
+    connection.onLogs(LOTTERY_WALLET.publicKey, async (logInfo) => {
+        try {
+            if (lotteryState.participants.length >= MAX_PARTICIPANTS || lotteryState.status !== 'Active') return;
+
+            const signature = logInfo.signature;
+            if (lotteryState.transactionsSeen.has(signature)) return;
+
+            lotteryState.transactionsSeen.add(signature);
+            if (lotteryState.transactionsSeen.size > MAX_TRANSACTIONS_SEEN) {
+                const oldest = Array.from(lotteryState.transactionsSeen)[0];
+                lotteryState.transactionsSeen.delete(oldest);
+            }
+
+            const tx = await connection.getTransaction(signature, { commitment: 'confirmed' });
+            if (!tx || !tx.meta || tx.meta.err) return;
+
+            const sender = tx.transaction.message.accountKeys[0].toBase58();
+            const recipient = tx.transaction.message.accountKeys[1].toBase58();
+            const pre = tx.meta.preBalances[1];
+            const post = tx.meta.postBalances[1];
+            const amount = pre - post;
+
+            if (recipient === LOTTERY_ADDRESS && amount === LOTTERY_ENTRY_AMOUNT) {
+                if (!lotteryState.participants.includes(sender)) {
+                    logger.info(`Valid entry from ${sender}`, { signature });
+                    lotteryState.participants.push(sender);
+                    lotteryState.pool += 0.01;
+                    lotteryState.recentDepositors.unshift(sender);
+                    if (lotteryState.recentDepositors.length > 5) lotteryState.recentDepositors.pop();
+                    await updateBalance();
+                    await saveState();
+                    broadcastState();
+
+                    if (lotteryState.participants.length === MAX_PARTICIPANTS) {
+                        await pickWinner();
+                    }
+                }
+            }
+        } catch (error) {
+            logger.error('Transaction monitoring error', { error: error.message });
+        }
+    }, 'confirmed');
+}
+
+const app = express();
+const server = http.createServer(app);
+const wss = new Server({ server });
+app.use(bodyParser.json());
+
+app.use('/status', rateLimit({ windowMs: 15 * 60 * 1000, max: 100 }));
+
+app.get('/', (req, res) => {
+    res.sendFile(__dirname + '/index.html');
+});
+
+app.get('/status', (req, res) => {
+    res.json({
+        participants: lotteryState.participants.length,
+        pool: lotteryState.pool,
+        status: lotteryState.status,
+        wallet: LOTTERY_ADDRESS,
+        winner: lotteryState.winner,
+        balance: lotteryState.balance,
+        recentDepositors: lotteryState.recentDepositors,
+        pastWinners: lotteryState.pastWinners
+    });
+});
+
+wss.on('connection', (ws) => {
+    ws.send(JSON.stringify(lotteryState));
+    ws.onmessage = (message) => {
+        try {
+            const data = JSON.parse(message.data);
+            if (data.action === 'updateBalance') {
+                lotteryState.balance = data.balance;
+                broadcastState();
+            }
+        } catch (error) {
+            ws.send(JSON.stringify({ error: 'Messages not supported or invalid' }));
+        }
+    };
+});
+
+async function start() {
+    await fs.mkdir('backup', { recursive: true });
+    await loadState();
+    await updateBalance();
+    monitorTransactions();
+    server.listen(PORT, () => logger.info(`Lottery server running on port ${PORT}`));
+}
+
+start();
