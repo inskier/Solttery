@@ -1,5 +1,5 @@
 require('dotenv').config();
-// Autonomous Solana Lottery System - Production-Ready with Phantom Integration
+// Autonomous Solana Lottery System - Crypto-Themed with 0.01 SOL Entry and 0.04 SOL Payout
 const solanaWeb3 = require('@solana/web3.js');
 const express = require('express');
 const { Server } = require('ws');
@@ -11,8 +11,8 @@ const rateLimit = require('express-rate-limit');
 const winston = require('winston');
 
 // Configuration
-const LOTTERY_ENTRY_AMOUNT = solanaWeb3.LAMPORTS_PER_SOL; // 1 SOL
-const WINNING_PAYOUT = 4 * LOTTERY_ENTRY_AMOUNT; // 4 SOL
+const LOTTERY_ENTRY_AMOUNT = 0.01 * solanaWeb3.LAMPORTS_PER_SOL; // 0.01 SOL
+const WINNING_PAYOUT = 0.04 * solanaWeb3.LAMPORTS_PER_SOL; // 0.04 SOL
 const MAX_PARTICIPANTS = 5;
 const PORT = process.env.PORT; // Use Render's dynamically assigned port
 const STATE_FILE = 'lottery-state.json';
@@ -21,7 +21,6 @@ const MAX_TRANSACTIONS_SEEN = 1000;
 const MINIMUM_FEE_LAMPORTS = 5000;
 
 // Logging Setup
-// For production, configure Winston with file rotation or cloud logging (e.g., AWS CloudWatch)
 const logger = winston.createLogger({
     level: 'info',
     format: winston.format.combine(
@@ -38,19 +37,10 @@ const logger = winston.createLogger({
 const connection = new solanaWeb3.Connection(solanaWeb3.clusterApiUrl(NETWORK), 'confirmed');
 
 // Wallet Setup
-// For production, use HSM or secure vault (e.g., AWS Secrets Manager) for PRIVATE_KEY_JSON
-let LOTTERY_WALLET;
-let LOTTERY_ADDRESS;
-try {
-    const secretKey = Uint8Array.from(JSON.parse(process.env.PRIVATE_KEY_JSON || '[]'));
-    if (secretKey.length !== 64) throw new Error('Invalid secret key size; expected 64 bytes');
-    LOTTERY_WALLET = solanaWeb3.Keypair.fromSecretKey(secretKey);
-    LOTTERY_ADDRESS = LOTTERY_WALLET.publicKey.toBase58();
-    logger.info('Lottery wallet initialized', { address: LOTTERY_ADDRESS });
-} catch (error) {
-    logger.error('Failed to initialize lottery wallet', { error: error.message });
-    throw new Error('Server cannot start: Invalid PRIVATE_KEY_JSON');
-}
+// Private key handled via Render environment settings
+const secretKey = Uint8Array.from(JSON.parse(process.env.PRIVATE_KEY_JSON || '[]'));
+const LOTTERY_WALLET = solanaWeb3.Keypair.fromSecretKey(secretKey);
+const LOTTERY_ADDRESS = LOTTERY_WALLET.publicKey.toBase58();
 
 // Lottery State
 let lotteryState = {
@@ -58,16 +48,20 @@ let lotteryState = {
     pool: 0,
     status: 'Active',
     winner: null,
-    transactionsSeen: new Set()
+    transactionsSeen: new Set(),
+    recentDepositors: [], // Track last 5 depositors
+    pastWinners: [],     // Track last 5 winners
+    balance: 0           // Outstanding balance
 };
 
 // Load/Save State
-// For production, replace with database (e.g., SQLite or MongoDB)
 async function loadState() {
     try {
         const data = await fs.readFile(STATE_FILE, 'utf8');
         lotteryState = JSON.parse(data);
         lotteryState.transactionsSeen = new Set(lotteryState.transactionsSeen || []);
+        lotteryState.recentDepositors = lotteryState.recentDepositors || [];
+        lotteryState.pastWinners = lotteryState.pastWinners || [];
         logger.info('State loaded successfully');
     } catch {
         logger.info('No previous state found, starting fresh');
@@ -105,127 +99,202 @@ app.use('/status', rateLimit({ windowMs: 15 * 60 * 1000, max: 100 }));
 // Serve Frontend
 const wsProtocol = process.env.NODE_ENV === 'production' ? 'wss' : 'ws';
 app.get('/', (req, res) => {
-    // For production, generate and include a CSRF token
     res.send(`
         <!DOCTYPE html>
-        <html>
+        <html lang="en">
         <head>
-            <title>Solana Lottery</title>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Solana Crypto Lottery</title>
             <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.js"></script>
+            <script src="https://unpkg.com/lucide@0.4.0/dist/umd/lucide.min.js"></script>
             <style>
-                body { font-family: Arial; max-width: 800px; margin: 0 auto; padding: 20px; }
-                #lottery-status { margin: 20px 0; padding: 10px; border: 1px solid #ccc; }
-                #participants { margin: 20px 0; }
-                .error { color: red; }
-                button { padding: 10px; margin: 5px; }
+                body {
+                    font-family: 'Courier New', monospace;
+                    margin: 0;
+                    padding: 0;
+                    min-height: 100vh;
+                    background: linear-gradient(135deg, #0d0d2b, #1a1a3a, #2d2d4d);
+                    color: #00ffcc;
+                    text-shadow: 0 0 5px #00ffcc, 0 0 10px #00ffcc;
+                }
+                .container {
+                    max-width: 1000px;
+                    margin: 0 auto;
+                    padding: 20px;
+                }
+                h1 {
+                    text-align: center;
+                    font-size: 2.5em;
+                    margin-bottom: 20px;
+                    color: #ff9900;
+                    text-shadow: 0 0 10px #ff9900;
+                }
+                .crypto-card {
+                    background: rgba(15, 15, 35, 0.9);
+                    border: 2px solid #00ffcc;
+                    border-radius: 10px;
+                    padding: 15px;
+                    margin-bottom: 20px;
+                    box-shadow: 0 0 15px rgba(0, 255, 204, 0.3);
+                }
+                .crypto-grid {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+                    gap: 20px;
+                    margin-bottom: 20px;
+                }
+                .address {
+                    font-size: 0.9em;
+                    word-break: break-all;
+                    color: #66ffcc;
+                }
+                .balance, .depositors, .winners {
+                    margin: 10px 0;
+                }
+                .button {
+                    padding: 10px 20px;
+                    background: #ff9900;
+                    color: #0d0d2b;
+                    border: none;
+                    border-radius: 5px;
+                    cursor: pointer;
+                    transition: background 0.3s;
+                    width: 100%;
+                }
+                .button:hover {
+                    background: #ffcc66;
+                }
+                .button:disabled {
+                    background: #666;
+                    cursor: not-allowed;
+                }
+                .loader {
+                    border: 4px solid #f3f3f3;
+                    border-top: 4px solid #ff9900;
+                    border-radius: 50%;
+                    width: 24px;
+                    height: 24px;
+                    animation: spin 1s linear infinite;
+                    margin: 0 auto;
+                    display: inline-block;
+                }
+                @keyframes spin {
+                    0% { transform: rotate(0deg); }
+                    100% { transform: rotate(360deg); }
+                }
+                .network-indicator {
+                    font-size: 0.8em;
+                    color: #66ffcc;
+                    text-align: center;
+                    margin-bottom: 10px;
+                }
             </style>
         </head>
         <body>
-            <h1>Solana Lottery</h1>
-            <div>Lottery Wallet: ${LOTTERY_ADDRESS}</div>
-            <div>Your Wallet: <span id="wallet-address">Not connected</span></div>
-            <button id="connect-wallet">Connect Phantom Wallet</button>
-            <div id="lottery-status">Loading...</div>
-            <h2>Participants</h2>
-            <div id="participants"></div>
-            <button id="join-lottery" disabled>Join Lottery (1 SOL)</button>
-            <div id="error-message" class="error"></div>
-            <script>
-                const ws = new WebSocket('${wsProtocol}://' + location.host);
-                const connection = new solanaWeb3.Connection('https://api.${NETWORK}.solana.com', 'confirmed');
-                const LOTTERY_WALLET = new solanaWeb3.PublicKey('${LOTTERY_ADDRESS}');
-                const statusDiv = document.getElementById('lottery-status');
-                const participantsDiv = document.getElementById('participants');
-                const connectButton = document.getElementById('connect-wallet');
-                const joinButton = document.getElementById('join-lottery');
-                const errorDiv = document.getElementById('error-message');
-                let provider = null;
+            <div class="container">
+                <h1>🔮 Solana Crypto Lottery</h1>
+                <div class="network-indicator">Network: ${NETWORK}</div>
+                <div class="crypto-grid">
+                    <div class="crypto-card">
+                        <h2><i data-lucide="wallet" class="text-yellow-400"></i> Lottery Wallet</h2>
+                        <div class="address">${LOTTERY_ADDRESS}</div>
+                        <p>Send 0.01 SOL to participate</p>
+                        <div class="balance" id="wallet-balance">Balance: Loading...</div>
+                    </div>
+                    <div class="crypto-card">
+                        <h2><i data-lucide="coins" class="text-green-400"></i> Join Lottery</h2>
+                        <button id="join-lottery" class="button">Send 0.01 SOL</button>
+                        <div id="error-message" class="error"></div>
+                    </div>
+                </div>
+                <div class="crypto-card">
+                    <h2><i data-lucide="users" class="text-blue-400"></i> Recent Depositors (Last 5)</h2>
+                    <div id="recent-depositors"></div>
+                </div>
+                <div class="crypto-card">
+                    <h2><i data-lucide="trophy" class="text-yellow-400"></i> Past Winners (Last 5)</h2>
+                    <div id="past-winners"></div>
+                </div>
+                <div class="crypto-card">
+                    <h2><i data-lucide="info" class="text-purple-400"></i> Lottery Status</h2>
+                    <div id="lottery-status">Loading...</div>
+                </div>
+                <script>
+                    const ws = new WebSocket('${wsProtocol}://' + location.host);
+                    const connection = new solanaWeb3.Connection('https://api.${NETWORK}.solana.com', 'confirmed');
+                    const LOTTERY_WALLET = new solanaWeb3.PublicKey('${LOTTERY_ADDRESS}');
+                    const statusDiv = document.getElementById('lottery-status');
+                    const balanceDiv = document.getElementById('wallet-balance');
+                    const depositorsDiv = document.getElementById('recent-depositors');
+                    const winnersDiv = document.getElementById('past-winners');
+                    const joinButton = document.getElementById('join-lottery');
+                    const errorDiv = document.getElementById('error-message');
 
-                ws.onopen = () => console.log('Connected to lottery server');
-                ws.onmessage = (event) => {
-                    try {
-                        const data = JSON.parse(event.data);
-                        if (data.error) {
-                            errorDiv.textContent = 'Error: ' + data.error;
-                            return;
-                        }
-                        statusDiv.innerHTML = \`
-                            Current Participants: \${data.participants.length}/${MAX_PARTICIPANTS}<br>
-                            Prize Pool: \${data.pool} SOL<br>
-                            Status: \${data.status}<br>
-                            \${data.winner ? \`Winner: \${data.winner}\` : ''}
-                        \`;
-                        participantsDiv.innerHTML = data.participants.map(p => \`<div>\${p}</div>\`).join('');
-                    } catch {
-                        errorDiv.textContent = 'Error: Invalid server message';
-                    }
-                };
-
-                async function connectWallet() {
-                    let attempts = 0;
-                    const maxAttempts = 3;
-                    while (attempts < maxAttempts) {
+                    ws.onopen = () => console.log('Connected to lottery server');
+                    ws.onmessage = (event) => {
                         try {
-                            provider = window.solana;
-                            if (!provider || !provider.isPhantom) throw new Error('Phantom wallet not found');
-                            if (provider.network !== '${NETWORK}') throw new Error('Wallet network mismatch. Switch to ${NETWORK}.');
-                            await provider.connect();
-                            document.getElementById('wallet-address').innerText = provider.publicKey.toString();
-                            joinButton.disabled = false;
-                            errorDiv.textContent = 'Wallet connected!';
-                            provider.on('disconnect', async () => {
-                                document.getElementById('wallet-address').innerText = 'Not connected';
-                                joinButton.disabled = true;
-                                errorDiv.textContent = 'Wallet disconnected. Reconnecting...';
-                                await connectWallet(); // Auto-reconnect
-                            });
-                            break;
-                        } catch (error) {
-                            attempts++;
-                            if (attempts === maxAttempts) {
-                                errorDiv.textContent = 'Error: ' + (error.message || 'Failed to connect wallet');
-                                console.error(error);
-                                break;
+                            const data = JSON.parse(event.data);
+                            if (data.error) {
+                                errorDiv.textContent = 'Error: ' + data.error;
+                                return;
                             }
-                            await new Promise(resolve => setTimeout(resolve, 1000));
+                            statusDiv.innerHTML = \`
+                                Participants: \${data.participants.length}/${MAX_PARTICIPANTS}<br>
+                                Prize Pool: \${data.pool.toFixed(2)} SOL<br>
+                                Status: \${data.status}<br>
+                                \${data.winner ? 'Current Winner: ' + data.winner : ''}
+                            \`;
+                            balanceDiv.textContent = 'Balance: ' + data.balance + ' SOL';
+                            depositorsDiv.innerHTML = data.recentDepositors.map(d => \`<div class="address">\${d.slice(0, 8)}...\${d.slice(-8)}</div>\`).join('');
+                            winnersDiv.innerHTML = data.pastWinners.map(w => \`<div class="address">\${w.slice(0, 8)}...\${w.slice(-8)}</div>\`).join('');
+                        } catch (e) {
+                            errorDiv.textContent = 'Error: Invalid server message';
+                            console.error(e);
                         }
-                    }
-                }
+                    };
 
-                connectButton.addEventListener('click', connectWallet);
+                    joinButton.addEventListener('click', async () => {
+                        try {
+                            if (!window.solana || !window.solana.isPhantom) {
+                                errorDiv.textContent = 'Phantom wallet not found. Install at https://phantom.app/';
+                                return;
+                            }
+                            joinButton.disabled = true;
+                            joinButton.innerHTML = 'Sending <div class="loader"></div>';
+                            const provider = window.solana;
+                            const transaction = new solanaWeb3.Transaction().add(
+                                solanaWeb3.SystemProgram.transfer({
+                                    fromPubkey: provider.publicKey,
+                                    toPubkey: LOTTERY_WALLET,
+                                    lamports: ${LOTTERY_ENTRY_AMOUNT}
+                                })
+                            );
+                            transaction.feePayer = provider.publicKey;
+                            const latestBlock = await connection.getLatestBlockhash();
+                            transaction.recentBlockhash = latestBlock.blockhash;
 
-                joinButton.addEventListener('click', async () => {
-                    try {
-                        if (!provider || !provider.isPhantom) throw new Error('Phantom wallet not found');
-                        joinButton.disabled = true;
-                        const transaction = new solanaWeb3.Transaction().add(
-                            solanaWeb3.SystemProgram.transfer({
-                                fromPubkey: provider.publicKey,
-                                toPubkey: LOTTERY_WALLET,
-                                lamports: ${LOTTERY_ENTRY_AMOUNT}
-                            })
-                        );
-                        transaction.feePayer = provider.publicKey;
-                        const latestBlock = await connection.getLatestBlockhash();
-                        transaction.recentBlockhash = latestBlock.blockhash;
+                            const signed = await provider.signTransaction(transaction);
+                            const signature = await connection.sendRawTransaction(signed.serialize());
+                            await connection.confirmTransaction({
+                                signature,
+                                blockhash: latestBlock.blockhash,
+                                lastValidBlockHeight: latestBlock.lastValidBlockHeight
+                            }, 'confirmed');
 
-                        const signed = await provider.signTransaction(transaction);
-                        const signature = await connection.sendRawTransaction(signed.serialize());
-                        await connection.confirmTransaction({
-                            signature,
-                            blockhash: latestBlock.blockhash,
-                            lastValidBlockHeight: latestBlock.lastValidBlockHeight
-                        }, 'confirmed');
+                            errorDiv.textContent = 'Entry sent! Transaction: ' + signature;
+                        } catch (error) {
+                            errorDiv.textContent = 'Error: ' + (error.message || 'Transaction failed');
+                            console.error(error);
+                        } finally {
+                            joinButton.disabled = false;
+                            joinButton.textContent = 'Send 0.01 SOL';
+                        }
+                    });
 
-                        errorDiv.textContent = 'Entry successful! Waiting for confirmation...';
-                        joinButton.disabled = false;
-                    } catch (error) {
-                        joinButton.disabled = false;
-                        errorDiv.textContent = 'Error: ' + (error.message || 'Transaction failed');
-                        console.error(error);
-                    }
-                });
-            </script>
+                    lucide.createIcons();
+                </script>
+            </div>
         </body>
         </html>
     `);
@@ -238,7 +307,10 @@ app.get('/status', (req, res) => {
         pool: lotteryState.pool,
         status: lotteryState.status,
         wallet: LOTTERY_ADDRESS,
-        winner: lotteryState.winner
+        winner: lotteryState.winner,
+        balance: lotteryState.balance,
+        recentDepositors: lotteryState.recentDepositors,
+        pastWinners: lotteryState.pastWinners
     });
 });
 
@@ -276,7 +348,10 @@ async function monitorTransactions() {
                 if (!lotteryState.participants.includes(sender)) {
                     logger.info(`Valid entry from ${sender}`, { signature });
                     lotteryState.participants.push(sender);
-                    lotteryState.pool += 1;
+                    lotteryState.pool += 0.01; // 0.01 SOL per entry
+                    lotteryState.recentDepositors.unshift(sender);
+                    if (lotteryState.recentDepositors.length > 5) lotteryState.recentDepositors.pop();
+                    await updateBalance();
                     await saveState();
                     broadcastState();
 
@@ -292,6 +367,16 @@ async function monitorTransactions() {
     }, 'confirmed');
 }
 
+// Update Balance
+async function updateBalance() {
+    try {
+        const balanceLamports = await connection.getBalance(LOTTERY_WALLET.publicKey);
+        lotteryState.balance = (balanceLamports / solanaWeb3.LAMPORTS_PER_SOL).toFixed(4);
+    } catch (error) {
+        logger.error('Balance fetch failed', { error: error.message });
+    }
+}
+
 // Pick Winner
 async function pickWinner() {
     try {
@@ -302,7 +387,7 @@ async function pickWinner() {
         const balance = await connection.getBalance(LOTTERY_WALLET.publicKey);
         const feeEstimate = await connection.getFeeForMessage(
             new solanaWeb3.Message({
-                accountKeys: [LOTTERY_WALLET.publicKey.toBase58(), winnerAddress], // Fixed to use winnerAddress
+                accountKeys: [LOTTERY_WALLET.publicKey.toBase58(), winnerAddress],
                 instructions: [
                     solanaWeb3.SystemProgram.transfer({
                         fromPubkey: LOTTERY_WALLET.publicKey,
@@ -339,6 +424,8 @@ async function pickWinner() {
                 logger.info(`Winner: ${winnerAddress}, Payout sent`, { signature });
                 lotteryState.winner = winnerAddress;
                 lotteryState.status = 'Complete';
+                lotteryState.pastWinners.unshift(winnerAddress);
+                if (lotteryState.pastWinners.length > 5) lotteryState.pastWinners.pop();
                 break;
             } catch (error) {
                 attempts++;
@@ -366,7 +453,10 @@ async function resetLottery() {
         pool: 0,
         status: 'Active',
         winner: null,
-        transactionsSeen: new Set()
+        transactionsSeen: new Set(),
+        recentDepositors: [],
+        pastWinners: lotteryState.pastWinners || [],
+        balance: lotteryState.balance || 0
     };
     await saveState();
     broadcastState();
@@ -387,6 +477,7 @@ function broadcastState(error = null) {
 async function start() {
     await fs.mkdir('backup', { recursive: true }); // Create backup directory
     await loadState();
+    await updateBalance(); // Initial balance update
     monitorTransactions();
     server.listen(PORT, () => logger.info(`Lottery server running on port ${PORT}`));
 }
